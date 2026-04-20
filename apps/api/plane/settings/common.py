@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "plane.license",
     "plane.api",
     "plane.authentication",
+    "plane.cow",
     # Third-party things
     "rest_framework",
     "corsheaders",
@@ -91,7 +92,11 @@ MIDDLEWARE = [
     "plane.middleware.request_body_size.RequestBodySizeLimitMiddleware",
     "plane.middleware.logger.APITokenLogMiddleware",
     "plane.middleware.logger.RequestLoggerMiddleware",
+    "plane.cow.middleware.CowSessionMiddleware",
 ]
+
+# Copy-On-Write (agent-cow) — disabled by default; enable via `ENABLE_COW=1`.
+ENABLE_COW = os.environ.get("ENABLE_COW", "0") == "1"
 
 # Rest Framework settings
 REST_FRAMEWORK = {

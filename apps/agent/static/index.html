@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>plane-cow agent</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #161a22;
+        --border: #262c38;
+        --text: #e6e8ec;
+        --muted: #8b93a7;
+        --accent: #7c9cff;
+        --user: #1f2a3f;
+        --assistant: #1a2230;
+        --tool: #1a2a1f;
+        --danger: #e05a6a;
+        --ok: #5fb58c;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+        flex-wrap: wrap;
+      }
+      header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+      header .spacer { flex: 1; }
+      header select, header button {
+        background: #0f1320;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font: inherit;
+        cursor: pointer;
+      }
+      header button:hover { border-color: var(--accent); }
+      header button.danger { color: var(--danger); }
+      header button.ok { color: var(--ok); }
+      .badge {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: var(--muted);
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #0f1320;
+      }
+      main {
+        flex: 1;
+        overflow: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .msg {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        max-width: 920px;
+      }
+      .msg .role {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .msg.user { background: var(--user); align-self: flex-end; }
+      .msg.assistant { background: var(--assistant); align-self: flex-start; }
+      .msg.tool { background: var(--tool); font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+      .msg.error { background: #3a1a22; border-color: var(--danger); }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 10px 14px;
+        background: var(--panel);
+        display: flex;
+        gap: 8px;
+      }
+      textarea {
+        flex: 1;
+        resize: none;
+        background: #0f1320;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font: inherit;
+        min-height: 44px;
+        max-height: 160px;
+      }
+      footer button {
+        background: var(--accent);
+        color: #0c0f18;
+        border: none;
+        border-radius: 6px;
+        padding: 0 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      footer button:disabled { opacity: 0.5; cursor: default; }
+      details > summary { cursor: pointer; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>plane-cow agent</h1>
+      <label>
+        model
+        <select id="model">
+          <option value="gemini/gemini-2.5-pro" selected>gemini-2.5-pro</option>
+          <option value="anthropic/claude-sonnet-4-5">claude-sonnet-4-5</option>
+          <option value="anthropic/claude-opus-4-5">claude-opus-4-5</option>
+          <option value="openai/gpt-5">gpt-5</option>
+          <option value="openai/gpt-5-mini">gpt-5-mini</option>
+        </select>
+      </label>
+      <span class="badge" id="sessionBadge">session: -</span>
+      <span class="badge" id="pendingBadge">pending: 0</span>
+      <div class="spacer"></div>
+      <button id="commitBtn" class="ok">Commit</button>
+      <button id="discardBtn" class="danger">Discard</button>
+      <button id="newSessionBtn">New session</button>
+    </header>
+    <main id="log"></main>
+    <footer>
+      <textarea id="input" placeholder="Tell the agent what to do in Plane..."></textarea>
+      <button id="sendBtn">Send</button>
+    </footer>
+
+    <script>
+      const state = {
+        sessionId: crypto.randomUUID(),
+        messages: [],
+      };
+
+      const log = document.getElementById("log");
+      const input = document.getElementById("input");
+      const sendBtn = document.getElementById("sendBtn");
+      const modelSel = document.getElementById("model");
+      const sessionBadge = document.getElementById("sessionBadge");
+      const pendingBadge = document.getElementById("pendingBadge");
+
+      function updateBadges(pendingCount) {
+        sessionBadge.textContent = "session: " + state.sessionId.slice(0, 8);
+        if (pendingCount !== undefined) {
+          pendingBadge.textContent = "pending: " + pendingCount;
+        }
+      }
+
+      function render() {
+        log.innerHTML = "";
+        for (const m of state.messages) {
+          if (m.role === "system") continue;
+          const el = document.createElement("div");
+          el.className = "msg " + m.role;
+          const role = document.createElement("div");
+          role.className = "role";
+          role.textContent = m.role + (m.name ? " \u00b7 " + m.name : "");
+          el.appendChild(role);
+          const body = document.createElement("div");
+          if (m.role === "assistant" && m.tool_calls && m.tool_calls.length) {
+            const calls = m.tool_calls
+              .map((tc) => tc.function.name + "(" + tc.function.arguments + ")")
+              .join("\n");
+            body.textContent = (m.content || "") + (m.content ? "\n" : "") + "\u2192 " + calls;
+          } else {
+            body.textContent = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+          }
+          el.appendChild(body);
+          log.appendChild(el);
+        }
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function appendError(text) {
+        const el = document.createElement("div");
+        el.className = "msg error";
+        el.textContent = text;
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      async function send() {
+        const text = input.value.trim();
+        if (!text) return;
+        state.messages.push({ role: "user", content: text });
+        input.value = "";
+        render();
+        sendBtn.disabled = true;
+        try {
+          const resp = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelSel.value,
+              session_id: state.sessionId,
+              messages: state.messages,
+            }),
+          });
+          if (!resp.ok) {
+            const body = await resp.text();
+            appendError("HTTP " + resp.status + ": " + body);
+            return;
+          }
+          const data = await resp.json();
+          state.messages = data.messages;
+          render();
+          const opsCount = (data.pending_ops && data.pending_ops.operation_ids)
+            ? data.pending_ops.operation_ids.length
+            : 0;
+          updateBadges(opsCount);
+        } catch (e) {
+          appendError(String(e));
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+
+      async function postSession(path) {
+        const resp = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: state.sessionId }),
+        });
+        return resp.json();
+      }
+
+      document.getElementById("commitBtn").addEventListener("click", async () => {
+        const r = await postSession("/commit");
+        appendError("[commit] " + JSON.stringify(r));
+        newSession();
+      });
+
+      document.getElementById("discardBtn").addEventListener("click", async () => {
+        const r = await postSession("/discard");
+        appendError("[discard] " + JSON.stringify(r));
+        newSession();
+      });
+
+      function newSession() {
+        state.sessionId = crypto.randomUUID();
+        state.messages = [];
+        updateBadges(0);
+        render();
+      }
+
+      document.getElementById("newSessionBtn").addEventListener("click", newSession);
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+      });
+      sendBtn.addEventListener("click", send);
+
+      updateBadges(0);
+    </script>
+  </body>
+</html>
