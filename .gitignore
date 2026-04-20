@@ -51,6 +51,7 @@ pnpm-debug.log*
 venv
 .venv
 *.pyc
+__pycache__/
 staticfiles
 mediafiles
 .env

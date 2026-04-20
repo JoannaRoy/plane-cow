@@ -140,6 +140,26 @@ services:
       - plane-db
       - plane-redis
 
+  agent:
+    build:
+      context: ./apps/agent
+      dockerfile: Dockerfile.dev
+      args:
+        DOCKER_BUILDKIT: 1
+    restart: unless-stopped
+    networks:
+      - dev_env
+    volumes:
+      - ./apps/agent:/code
+    env_file:
+      - ./apps/agent/.env
+    environment:
+      PLANE_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "8765:8765"
+
 volumes:
   redisdata:
   uploads:
