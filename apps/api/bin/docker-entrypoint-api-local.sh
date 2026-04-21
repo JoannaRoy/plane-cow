@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+pip install -e /agent-cow-python --quiet --no-input 2>&1 | grep -v "^$" || true
 python manage.py wait_for_db
 # Wait for migrations
 python manage.py wait_for_migrations

@@ -33,6 +33,8 @@ through unchanged.
 
 All endpoints require authentication. They live under `/api/cow/`.
 
+### Session management
+
 | Method | Path                                         | Body                                                     | Description                                                                             |
 | ------ | -------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `GET`  | `/api/cow/status/`                           | —                                                        | Returns schema-wide COW status                                                          |
@@ -41,8 +43,38 @@ All endpoints require authentication. They live under `/api/cow/`.
 | `POST` | `/api/cow/operations/discard/`               | `{"session_id": "uuid", "operation_ids": ["uuid", ...]}` | Discard specific operations                                                             |
 | `GET`  | `/api/cow/sessions/<session_id>/operations/` | —                                                        | List operations and dirty tables for a session                                          |
 
-The middleware bypasses these routes — committing must not itself be
-staged as COW changes.
+### Recordings (user-demonstrated workflows)
+
+| Method   | Path                                | Body                                     | Description                                                            |
+| -------- | ----------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| `POST`   | `/api/cow/recordings/start/`        | `{name?, prompt?, tags?, workspace_id?}` | Create a recording and mint a `session_id` for the COW headers         |
+| `POST`   | `/api/cow/recordings/stop/`         | `{session_id}`                           | Set `ended_at`                                                         |
+| `GET`    | `/api/cow/recordings/`              | — (query `?workspace_id=&tag=&active=1`) | List                                                                   |
+| `GET`    | `/api/cow/recordings/<session_id>/` | —                                        | Detail + derived `operation_ids` / `dirty_tables` from the `*_changes` |
+| `PATCH`  | `/api/cow/recordings/<session_id>/` | `{name?, prompt?, tags?}`                | Update metadata                                                        |
+| `DELETE` | `/api/cow/recordings/<session_id>/` | —                                        | Soft-delete the recording row (staged changes are untouched)           |
+
+### Agent sessions (one row per agent run)
+
+| Method   | Path                                    | Body                                                          | Description                                       |
+| -------- | --------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- |
+| `POST`   | `/api/cow/agent-sessions/start/`        | `{recording_id?, starting_prompt?, model?, workspace_id?}`    | Mint a fresh `session_id` for an agent replay     |
+| `POST`   | `/api/cow/agent-sessions/finish/`       | `{session_id, status: RUNNING\|COMMITTED\|DISCARDED\|FAILED}` | Mark the run done and set `ended_at`              |
+| `GET`    | `/api/cow/agent-sessions/`              | — (query `?recording_id=&workspace_id=&status=`)              | List                                              |
+| `GET`    | `/api/cow/agent-sessions/<session_id>/` | —                                                             | Detail + derived `operation_ids` / `dirty_tables` |
+| `DELETE` | `/api/cow/agent-sessions/<session_id>/` | —                                                             | Soft-delete the agent-session row                 |
+
+The middleware bypasses all `/api/cow/*` routes — committing and recording
+management must not themselves be staged as COW changes.
+
+Recording / agent-session rows live in the `cow_recording_session` and
+`cow_agent_session` tables, which are in `COW_EXCLUDED_TABLES` so they are
+never shadowed. Traces are reconstructed on demand by joining `session_id`
+against the `*_changes` tables via `cow_lib.get_session_operations` and
+`cow_lib.get_dirty_tables` — there is deliberately no separate
+`cow_operation_log` (unlike monotrail). See
+[../../../../docs/recording-creation-guide.md](../../../../docs/recording-creation-guide.md)
+for the full workflow.
 
 ## Initial setup
 

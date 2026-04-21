@@ -74,9 +74,12 @@ services:
       - dev_env
     volumes:
       - ./apps/api:/code
+      - ../agent-cow-python:/agent-cow-python
     command: ./bin/docker-entrypoint-api-local.sh
     env_file:
       - ./apps/api/.env
+    environment:
+      AGENT_URL: http://agent:8765
     depends_on:
       - plane-db
       - plane-redis

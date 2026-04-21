@@ -42,6 +42,7 @@ COW_EXCLUDED_APPS: set[str] = {
 COW_EXCLUDED_TABLES: set[str] = {
     "cow_operation_log",
     "cow_recording_session",
+    "cow_agent_session",
     "django_migrations",
     "django_content_type",
     "django_session",

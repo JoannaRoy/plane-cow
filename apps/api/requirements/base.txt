@@ -71,5 +71,10 @@ opentelemetry-exporter-otlp==1.28.1
 drf-spectacular==0.28.0
 # html sanitizer
 nh3==0.2.18
-# copy-on-write for agent sessions
-agent-cow==0.1.4
+# copy-on-write for agent sessions (local checkout)
+-e ../../../../agent-cow-python
+# cow recording/agent-session scoring (eval harness)
+pydantic-evals>=1.0.0,<2
+logfire>=3.0.0,<4
+# used by run_recordings management command to POST to the FastAPI chat agent
+httpx>=0.27,<0.28
