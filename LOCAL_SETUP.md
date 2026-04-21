@@ -1,14 +1,24 @@
 # Local Setup
 
-## 1. Clone and run setup
+## 1. Clone `plane-cow` and `agent-cow-python` side-by-side
+
+Both repos must live as **siblings** in the same parent directory. The `api`, `worker`, `beat-worker`, and `migrator` services mount `../agent-cow-python` into the container (see `docker-compose-local.yml`), so the layout must be exactly:
+
+```
+<parent>/
+├── plane-cow/
+└── agent-cow-python/
+```
 
 ```bash
-git clone <repo-url>
+mkdir cow-paper && cd cow-paper
+git clone <plane-cow-repo-url> plane-cow
+git clone <agent-cow-python-repo-url> agent-cow-python
 cd plane-cow
 ./setup.sh
 ```
 
-This copies all `.env.example` files, generates the Django `SECRET_KEY`, and installs Node dependencies.
+`setup.sh` copies all `.env.example` files, generates the Django `SECRET_KEY`, and installs Node dependencies.
 
 ## 2. Add API keys to the agent
 
@@ -50,9 +60,9 @@ This starts the web app (port 3000) and admin panel (port 3001).
 4. Go to **Profile avatar → Settings → Personal Access Tokens → Add API token** and generate a token.
 5. Copy both values into `apps/agent/.env`.
 
-## 6. Enable COW
+## 6. Run the one-time COW setup
 
-Add `ENABLE_COW=1` to `apps/api/.env`, then run the one-time COW setup:
+`ENABLE_COW=1` is already set in `apps/api/.env` by `setup.sh`. Deploy the COW functions and apply the COW-aware migrations:
 
 ```bash
 docker compose -f docker-compose-local.yml exec api python manage.py cow_deploy_functions
