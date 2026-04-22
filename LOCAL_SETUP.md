@@ -1,19 +1,9 @@
 # Local Setup
 
-## 1. Clone `plane-cow` and `agent-cow-python` side-by-side
-
-Both repos must live as **siblings** in the same parent directory. The `api`, `worker`, `beat-worker`, and `migrator` services mount `../agent-cow-python` into the container (see `docker-compose-local.yml`), so the layout must be exactly:
-
-```
-<parent>/
-├── plane-cow/
-└── agent-cow-python/
-```
+## 1. Clone `plane-cow`
 
 ```bash
-mkdir cow-paper && cd cow-paper
 git clone <plane-cow-repo-url> plane-cow
-git clone <agent-cow-python-repo-url> agent-cow-python
 cd plane-cow
 ./setup.sh
 ```

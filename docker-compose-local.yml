@@ -74,7 +74,6 @@ services:
       - dev_env
     volumes:
       - ./apps/api:/code
-      - ../agent-cow-python:/agent-cow-python
     command: ./bin/docker-entrypoint-api-local.sh
     env_file:
       - ./apps/api/.env
@@ -98,12 +97,9 @@ services:
       - dev_env
     volumes:
       - ./apps/api:/code
-      - ../agent-cow-python:/agent-cow-python
     command: ./bin/docker-entrypoint-worker.sh
     env_file:
       - ./apps/api/.env
-    environment:
-      PYTHONPATH: /agent-cow-python
     depends_on:
       - api
       - plane-db
@@ -120,12 +116,9 @@ services:
       - dev_env
     volumes:
       - ./apps/api:/code
-      - ../agent-cow-python:/agent-cow-python
     command: ./bin/docker-entrypoint-beat.sh
     env_file:
       - ./apps/api/.env
-    environment:
-      PYTHONPATH: /agent-cow-python
     depends_on:
       - api
       - plane-db
@@ -142,12 +135,9 @@ services:
       - dev_env
     volumes:
       - ./apps/api:/code
-      - ../agent-cow-python:/agent-cow-python
     command: ./bin/docker-entrypoint-migrator.sh --settings=plane.settings.local
     env_file:
       - ./apps/api/.env
-    environment:
-      PYTHONPATH: /agent-cow-python
     depends_on:
       - plane-db
       - plane-redis

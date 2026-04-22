@@ -71,7 +71,8 @@ opentelemetry-exporter-otlp==1.28.1
 drf-spectacular==0.28.0
 # html sanitizer
 nh3==0.2.18
-# copy-on-write for agent sessions (local checkout) - installed at runtime via entrypoint
+# copy-on-write for agent sessions + scoring library
+agent-cow==0.1.5
 # cow recording/agent-session scoring (eval harness)
 pydantic-evals>=1.0.0,<2
 logfire>=3.0.0,<4

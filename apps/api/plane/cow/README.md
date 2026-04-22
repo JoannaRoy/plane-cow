@@ -157,5 +157,5 @@ and whose `db_table` is not one of the COW bookkeeping tables
 
 ## Related code
 
-- Library: [`agent-cow-python/agentcow/postgres/core.py`](../../../agent-cow-python/agentcow/postgres/core.py)
+- Library: [`agent-cow` on PyPI](https://pypi.org/project/agent-cow/) (`agentcow.postgres.core`)
 - monotrail reference integration: [`monotrail/terra/terra/cow/`](../../../../monotrail/terra/terra/cow/)
