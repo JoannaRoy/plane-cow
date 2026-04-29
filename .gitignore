@@ -111,3 +111,5 @@ build/
 .react-router/
 temp/
 scripts/
+
+apps/api/eval_output/
