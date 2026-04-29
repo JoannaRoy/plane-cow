@@ -5,14 +5,6 @@
 """
 Score every (recording, agent-session) pair that already exists in the DB.
 
-For each :class:`CowAgentSession` whose ``recording_id`` is non-null,
-compare its COW writes against the recording's COW writes via
-:func:`plane.cow.scoring.score_plane_sessions`, then dump the results as
-CSV + JSONL (+ a Logfire Evals dataset when ``LOGFIRE_TOKEN`` is set).
-
-For running new agent turns across a list of models before scoring, see
-the companion :mod:`run_recordings` command.
-
 Usage::
 
     python manage.py eval_recordings \
@@ -36,14 +28,11 @@ from asgiref.sync import async_to_sync
 from django.core.management.base import BaseCommand, CommandError
 
 from plane.cow.models import CowAgentSession
-from plane.cow.scoring import build_plane_config, score_plane_sessions
+from plane.cow.scoring import score_plane_sessions
 from plane.cow.scoring.eval_io import (
     PairResult,
-    flush_logfire,
     jsonl_entry,
     metrics_row,
-    run_pydantic_evals_dataset,
-    setup_logfire,
     write_csv,
     write_jsonl,
 )
@@ -78,7 +67,6 @@ def _score_agent(agent: CowAgentSession) -> PairResult:
     result = async_to_sync(score_plane_sessions)(
         ground_truth_session_id=rec.session_id,
         agent_session_id=agent.session_id,
-        config=build_plane_config(),
     )
     return PairResult(
         recording_id=rec.id,
@@ -95,34 +83,16 @@ def _score_agent(agent: CowAgentSession) -> PairResult:
 
 
 class Command(BaseCommand):
-    help = (
-        "Score every (recording, agent-session) pair with COW scoring and "
-        "dump results to CSV + JSONL (and logfire evals when configured)."
-    )
+    help = "Score every (recording, agent-session) pair and dump results to CSV + JSONL."
 
     def add_arguments(self, parser):
         parser.add_argument("--database", default="default", help="Django DB alias")
         parser.add_argument("--workspace-id", help="Filter by workspace UUID")
-        parser.add_argument(
-            "--recording-session-id",
-            help="Score only pairs under this recording session_id",
-        )
-        parser.add_argument(
-            "--agent-session-id",
-            help="Score only this single agent session (must be linked to a recording)",
-        )
-        parser.add_argument(
-            "--limit", type=int, help="Cap the number of pairs scored"
-        )
-        parser.add_argument(
-            "--output-dir",
-            default="./eval_output",
-            help="Directory for CSV/JSONL output (created if missing)",
-        )
-        parser.add_argument(
-            "--name",
-            help="pydantic-evals / logfire eval run name (default: timestamp)",
-        )
+        parser.add_argument("--recording-session-id", help="Score only pairs under this recording session_id")
+        parser.add_argument("--agent-session-id", help="Score only this single agent session")
+        parser.add_argument("--limit", type=int, help="Cap the number of pairs scored")
+        parser.add_argument("--output-dir", default="./eval_output", help="Directory for CSV/JSONL output")
+        parser.add_argument("--name", help="Output file name prefix (default: timestamp)")
 
     def handle(self, *args, **options):
         workspace_id = _parse_uuid(options.get("workspace_id"))
@@ -137,13 +107,10 @@ class Command(BaseCommand):
         )
         if not agents:
             raise CommandError(
-                "No (recording, agent-session) pairs matched the given filters. "
-                "Has any agent session linked a recording via --recording-id?"
+                "No (recording, agent-session) pairs matched the given filters."
             )
 
         self.stdout.write(f"Scoring {len(agents)} pair(s)...")
-
-        setup_logfire()
 
         pairs: list[PairResult] = []
         for i, agent in enumerate(agents, 1):
@@ -164,11 +131,6 @@ class Command(BaseCommand):
         write_jsonl(jsonl_path, (jsonl_entry(p) for p in pairs))
         self.stdout.write(self.style.SUCCESS(f"Wrote {csv_path}"))
         self.stdout.write(self.style.SUCCESS(f"Wrote {jsonl_path}"))
-
-        report = run_pydantic_evals_dataset(pairs, name=name)
-        if report is not None:
-            report.print(include_input=True, include_output=True)
-            flush_logfire()
 
 
 def _parse_uuid(value: Any) -> Optional[uuid.UUID]:
