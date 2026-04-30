@@ -24,6 +24,7 @@ from django.db import transaction
 from django.db.models import Model
 
 import agentcow.postgres.core as cow_core
+from agentcow.scoring import CowGraph, extract_session_graph
 
 from plane.cow.adapter.executor import DjangoAsyncExecutor
 
@@ -188,6 +189,40 @@ def get_session_operations(
     session_id: uuid.UUID, using: str = "default"
 ) -> list[uuid.UUID]:
     return async_to_sync(cow_core.get_session_operations)(
+        _executor(using), session_id, "public"
+    )
+
+
+def get_session_graph(
+    session_id: uuid.UUID,
+    using: str = "default",
+    extra_excluded_tables: Optional[Iterable[str]] = None,
+) -> CowGraph:
+    """Extract a :class:`CowGraph` for ``session_id`` from the public schema.
+
+    COW infrastructure tables (``cow_recording_session`` etc.) are excluded
+    so callers see only the domain writes the session produced.
+    """
+    excluded = set(COW_EXCLUDED_TABLES)
+    if extra_excluded_tables:
+        excluded.update(extra_excluded_tables)
+    return async_to_sync(extract_session_graph)(
+        _executor(using),
+        "public",
+        session_id,
+        excluded_tables=excluded,
+    )
+
+
+def get_session_dependencies(
+    session_id: uuid.UUID, using: str = "default"
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """Return ``(depends_on, operation_id)`` pairs for a COW session.
+
+    Includes transitive edges — callers that want a minimal DAG must run
+    transitive reduction on the result.
+    """
+    return async_to_sync(cow_core.get_operation_dependencies)(
         _executor(using), session_id, "public"
     )
 

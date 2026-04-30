@@ -1,0 +1,39 @@
+# Throwaway dev install of plane-ce on the trail-dev GKE cluster, used for
+# manual agent testing of the cow agent. All stateful deps (postgres, redis,
+# rabbitmq, minio) run in-cluster with ephemeral default sizing — destroying
+# the namespace is the intended teardown.
+
+planeVersion: v1.2.3
+
+# Custom api/worker/beatworker image with the cow agent code. Must be tagged
+# with the same value as planeVersion above (chart composes image:tag).
+api:
+  image: europe-west1-docker.pkg.dev/trail-ml-9e15e/cow-gym-testing/plane-cow-api
+  pullPolicy: Always
+worker:
+  image: europe-west1-docker.pkg.dev/trail-ml-9e15e/cow-gym-testing/plane-cow-api
+  pullPolicy: Always
+beatworker:
+  image: europe-west1-docker.pkg.dev/trail-ml-9e15e/cow-gym-testing/plane-cow-api
+  pullPolicy: Always
+
+ingress:
+  enabled: false
+  # Even with ingress disabled the chart bakes WEB_URL/CORS_ALLOWED_ORIGINS
+  # from this value into the api env, so redirects after sign-in/god-mode
+  # form posts end up here. Match the local port-forward to plane-cow-proxy.
+  appHost: "localhost:38080"
+
+postgres:
+  local_setup: true
+  volumeSize: 2Gi
+
+redis:
+  local_setup: true
+
+rabbitmq:
+  local_setup: true
+
+minio:
+  local_setup: true
+  volumeSize: 2Gi

@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plane-cow-proxy-caddyfile
+  namespace: plane-cow
+data:
+  Caddyfile: |
+    {
+      auto_https off
+      servers {
+        max_header_size 25MB
+      }
+    }
+    :80 {
+      request_body {
+        max_size 20MB
+      }
+      redir /spaces /spaces/ permanent
+      reverse_proxy /spaces/* plane-cow-space:3000
+
+      redir /god-mode /god-mode/ permanent
+      reverse_proxy /god-mode/* plane-cow-admin:3000
+
+      reverse_proxy /live/* plane-cow-live:3000
+
+      reverse_proxy /api/* plane-cow-api:8000
+      reverse_proxy /auth/* plane-cow-api:8000
+      reverse_proxy /static/* plane-cow-api:8000
+
+      reverse_proxy /uploads/* plane-cow-minio:9000
+      reverse_proxy /uploads   plane-cow-minio:9000
+
+      reverse_proxy /* plane-cow-web:3000
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plane-cow-proxy
+  namespace: plane-cow
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: plane-cow-proxy }
+  template:
+    metadata:
+      labels: { app: plane-cow-proxy }
+    spec:
+      containers:
+        - name: caddy
+          image: caddy:2-alpine
+          args: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: caddyfile
+              mountPath: /etc/caddy
+      volumes:
+        - name: caddyfile
+          configMap:
+            name: plane-cow-proxy-caddyfile
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plane-cow-proxy
+  namespace: plane-cow
+spec:
+  selector: { app: plane-cow-proxy }
+  ports:
+    - port: 80
+      targetPort: 80
