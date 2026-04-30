@@ -36,10 +36,16 @@ from plane.cow.adapter.cow_lib import (
     enable_cow_for_model,
     get_cow_status,
     get_dirty_tables,
+    get_session_dependencies,
+    get_session_graph,
     get_session_operations,
 )
 from plane.cow.adapter.cow_session import apply_cow_variables_sync
 from plane.cow.adapter.executor import DjangoAsyncExecutor
+from plane.cow.adapter.graph_serializer import (
+    GRAPH_FORMAT_VERSION,
+    serialize_cow_graph,
+)
 from plane.cow.adapter.middleware import BaseCowSessionMiddleware, CowExecuteWrapper
 
 __all__ = [
@@ -51,6 +57,7 @@ __all__ = [
     "COW_VISIBLE_OPERATIONS_HEADER",
     "CowExecuteWrapper",
     "DjangoAsyncExecutor",
+    "GRAPH_FORMAT_VERSION",
     "apply_cow_variables_sync",
     "commit_cow_operations",
     "commit_cow_session",
@@ -63,8 +70,11 @@ __all__ = [
     "enable_cow_for_model",
     "get_cow_status",
     "get_dirty_tables",
+    "get_session_dependencies",
+    "get_session_graph",
     "get_session_operations",
     "parse_cow_headers_from_request",
+    "serialize_cow_graph",
     "trail_cow_context",
     "trail_cow_ctx",
 ]

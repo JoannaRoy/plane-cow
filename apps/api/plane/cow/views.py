@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 
 from plane.api.middleware.api_authentication import APIKeyAuthentication
 from plane.cow.adapter import cow_lib
+from plane.cow.adapter.graph_serializer import serialize_cow_graph
 from plane.cow.models import CowAgentSession, CowRecordingSession
 
 
@@ -156,6 +157,29 @@ class SessionOperationsView(APIView):
                 "operation_ids": [str(op) for op in operations],
                 "dirty_tables": dirty_tables,
             }
+        )
+
+
+class SessionGraphView(APIView):
+    """Return the serialized CowGraph for a session.
+
+    Used by cow_gym to snapshot ground-truth recordings at registration
+    time and to capture replay graphs for scoring.
+    """
+
+    authentication_classes = COW_AUTH
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request: Request, session_id: str) -> Response:
+        try:
+            session_uuid = _parse_uuid(session_id, "session_id")
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        graph = cow_lib.get_session_graph(session_uuid)
+        edges = cow_lib.get_session_dependencies(session_uuid)
+        return Response(
+            serialize_cow_graph(graph, session_id=session_uuid, edges=edges)
         )
 
 
