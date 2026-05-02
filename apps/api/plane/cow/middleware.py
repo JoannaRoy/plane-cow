@@ -4,7 +4,7 @@
 
 """Plane-specific configuration of the generic COW middleware.
 
-All the heavy lifting lives in :mod:`plane.cow.adapter.middleware`.
+All the heavy lifting lives in :mod:`agentcow.postgres.adapters.django.middleware`.
 This module only supplies plane-local policy: honour ``settings.ENABLE_COW``
 and skip the middleware for the commit/discard endpoints so they don't
 accidentally stage themselves as COW changes.
@@ -16,7 +16,7 @@ import os
 
 from django.conf import settings
 
-from plane.cow.adapter.middleware import BaseCowSessionMiddleware
+from agentcow.postgres.adapters.django.middleware import BaseCowSessionMiddleware
 
 
 def _is_cow_enabled() -> bool:

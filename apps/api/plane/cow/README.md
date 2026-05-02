@@ -1,161 +1,112 @@
-# plane.cow — Copy-On-Write for agent sessions
+# plane.cow — Copy-On-Write integration
 
 This Django app integrates [`agent-cow`](https://pypi.org/project/agent-cow/)
-into plane so that HTTP requests made on behalf of an AI agent can write to
-isolated `*_changes` tables instead of the primary data. Reviewers commit
-or discard those changes later via the `/api/cow/*` endpoints.
+into Plane so that HTTP requests made on behalf of an AI agent write to
+isolated `*_changes` shadow tables instead of the primary data. A reviewer
+can later commit or discard those changes via the `/api/cow/` endpoints.
 
-The architecture mirrors monotrail's `terra.cow` module. Plane is sync
-Django + psycopg 3, so the adapter wraps a Django cursor via
-`asgiref.sync.sync_to_async` and admin calls use `async_to_sync`.
+The framework-generic adapter layer (executor bridge, middleware base,
+ORM-aware enable/disable/commit helpers) lives in
+`agentcow.postgres.adapters.django` inside the library. Everything in this
+package is Plane-specific configuration or domain logic built on top of it.
 
-## Feature flag
+---
 
-Nothing activates until `ENABLE_COW=1` is exported in the process
-environment. With the flag unset, the middleware is a no-op and the
-endpoints are still mounted but operate on the live schema (so
-`cow_status` returns `enabled=False`).
+## What was added and why
 
-## Header contract
+The implementation is split into three categories by necessity.
 
-The middleware reads three headers from every inbound request:
+### (a) `core/` — ~230 lines — required for any COW deployment
 
-| Header                 | Purpose                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `x-agent-session-id`   | UUID that identifies the agent's COW session (required to activate COW)       |
-| `x-operation-id`       | UUID for the current operation. Auto-generated if omitted                     |
-| `x-visible-operations` | Comma-separated UUIDs. When set, reads only see changes from these operations |
+Everything needed for COW to function at runtime. Any Django + PostgreSQL
+project adopting COW would need to replicate roughly this surface.
 
-When `x-agent-session-id` is absent, the middleware passes the request
-through unchanged.
+| File            | Purpose                                                                                                                                                                                                                                                                                                     | Required?              |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `middleware.py` | Subclasses `BaseCowSessionMiddleware`; reads `ENABLE_COW` env flag and sets `/api/cow/` as a bypass prefix so management endpoints are never themselves staged as COW changes                                                                                                                               | Yes                    |
+| `excludes.py`   | Plane-specific table exclusion list (`device_sessions`) passed to the library's enable/disable helpers                                                                                                                                                                                                      | Yes                    |
+| `core/views.py` | Five endpoints: `GET /status/`, `POST /commit/`, `POST /operations/commit/`, `POST /operations/discard/`, `GET /sessions/<id>/operations/`. The last one is the only endpoint a scoring harness strictly needs — it returns the operation UUIDs for a session so they can be passed to `score_cow_sessions` | Yes                    |
+| `core/urls.py`  | URL patterns for the above                                                                                                                                                                                                                                                                                  | Yes                    |
+| `models.py`     | `CowRecordingSession` and `CowAgentSession` Django models. Excluded from COW enablement so they are never shadowed. Traces (operation IDs, dirty tables) are reconstructed on demand by querying `*_changes` — there is no separate operation log                                                           | If using recording API |
 
-## Endpoints
+### (b) `recording/` — ~400 lines — portable to the harness
 
-All endpoints require authentication. They live under `/api/cow/`.
+Ground-truth and agent session tracking. These endpoints exist so Plane can
+store recordings and agent runs in its own database. In a different deployment
+the entire sub-package could be replaced by equivalent storage in the eval
+harness — the only hard dependency on `core/` is the session-operations
+endpoint used for scoring.
 
-### Session management
+| File                                | Purpose                                                                                                                                                                                                                 | Required?                                  |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `recording/views.py`                | CRUD for `CowRecordingSession` (start, stop, list, detail, patch, delete) and `CowAgentSession` (start, finish, list, detail, delete). Also serializes operation IDs and dirty tables into detail responses             | No — harness can track sessions externally |
+| `recording/urls.py`                 | URL patterns for recordings and agent sessions                                                                                                                                                                          | No                                         |
+| `recording/scoring/plane_config.py` | Plane-specific `PLANE_EXCLUDED_TABLES` and `PLANE_IGNORED_FIELDS` sets, and `score_plane_sessions` — a thin async wrapper that wires `DjangoAsyncExecutor` to `agentcow.scoring.score_cow_sessions` with those defaults | No — can live in harness                   |
+| `recording/scoring/eval_io.py`      | `PairResult` dataclass bundling a recording and agent session with their `ScoringResult`; helpers for writing results to CSV and JSONL; per-operation structural and content utility deltas                             | No — can live in harness                   |
 
-| Method | Path                                         | Body                                                     | Description                                                                             |
-| ------ | -------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `GET`  | `/api/cow/status/`                           | —                                                        | Returns schema-wide COW status                                                          |
-| `POST` | `/api/cow/commit/`                           | `{"session_id": "uuid"}`                                 | Commit every dirty table for the session                                                |
-| `POST` | `/api/cow/operations/commit/`                | `{"session_id": "uuid", "operation_ids": ["uuid", ...]}` | Partial commit. If `operation_ids` is empty all operations in the session are committed |
-| `POST` | `/api/cow/operations/discard/`               | `{"session_id": "uuid", "operation_ids": ["uuid", ...]}` | Discard specific operations                                                             |
-| `GET`  | `/api/cow/sessions/<session_id>/operations/` | —                                                        | List operations and dirty tables for a session                                          |
+### (c) `management/commands/` — ~180 lines — deployment ops
 
-### Recordings (user-demonstrated workflows)
+Django management commands for standing up and maintaining COW in the
+environment.
 
-| Method   | Path                                | Body                                     | Description                                                            |
-| -------- | ----------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| `POST`   | `/api/cow/recordings/start/`        | `{name?, prompt?, tags?, workspace_id?}` | Create a recording and mint a `session_id` for the COW headers         |
-| `POST`   | `/api/cow/recordings/stop/`         | `{session_id}`                           | Set `ended_at`                                                         |
-| `GET`    | `/api/cow/recordings/`              | — (query `?workspace_id=&tag=&active=1`) | List                                                                   |
-| `GET`    | `/api/cow/recordings/<session_id>/` | —                                        | Detail + derived `operation_ids` / `dirty_tables` from the `*_changes` |
-| `PATCH`  | `/api/cow/recordings/<session_id>/` | `{name?, prompt?, tags?}`                | Update metadata                                                        |
-| `DELETE` | `/api/cow/recordings/<session_id>/` | —                                        | Soft-delete the recording row (staged changes are untouched)           |
+| Command                | Purpose                                                                                                                  | Required?           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| `cow_deploy_functions` | Installs the agent-cow PL/pgSQL helpers into the database (one-time per DB)                                              | Yes, once           |
+| `cow_enable`           | Enables COW on every eligible Plane table in FK-topological order                                                        | Yes, at deploy      |
+| `cow_disable`          | Disables COW (reverse FK order). Used before schema migrations                                                           | Yes, at deploy      |
+| `cow_migrate`          | Runs `cow_disable` → `manage.py migrate` → `cow_enable` so Django's schema editor sees plain tables instead of COW views | Yes, for migrations |
+| `cow_status`           | Prints the schema-wide COW status (which tables are enabled)                                                             | No, diagnostic      |
 
-### Agent sessions (one row per agent run)
+---
 
-| Method   | Path                                    | Body                                                          | Description                                       |
-| -------- | --------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- |
-| `POST`   | `/api/cow/agent-sessions/start/`        | `{recording_id?, starting_prompt?, model?, workspace_id?}`    | Mint a fresh `session_id` for an agent replay     |
-| `POST`   | `/api/cow/agent-sessions/finish/`       | `{session_id, status: RUNNING\|COMMITTED\|DISCARDED\|FAILED}` | Mark the run done and set `ended_at`              |
-| `GET`    | `/api/cow/agent-sessions/`              | — (query `?recording_id=&workspace_id=&status=`)              | List                                              |
-| `GET`    | `/api/cow/agent-sessions/<session_id>/` | —                                                             | Detail + derived `operation_ids` / `dirty_tables` |
-| `DELETE` | `/api/cow/agent-sessions/<session_id>/` | —                                                             | Soft-delete the agent-session row                 |
+## Line count summary
 
-The middleware bypasses all `/api/cow/*` routes — committing and recording
-management must not themselves be staged as COW changes.
+| Category                                        | Lines     | Portable to harness?      |
+| ----------------------------------------------- | --------- | ------------------------- |
+| (a) Core — runtime COW machinery                | ~250      | No — must live in the app |
+| (b) Recording API — GT + agent session tracking | ~680      | Yes                       |
+| (c) Deployment commands                         | ~180      | No                        |
+| **Total**                                       | **~1110** |                           |
 
-Recording / agent-session rows live in the `cow_recording_session` and
-`cow_agent_session` tables, which are in `COW_EXCLUDED_TABLES` so they are
-never shadowed. Traces are reconstructed on demand by joining `session_id`
-against the `*_changes` tables via `cow_lib.get_session_operations` and
-`cow_lib.get_dirty_tables` — there is deliberately no separate
-`cow_operation_log` (unlike monotrail). See
-[../../../../docs/recording-creation-guide.md](../../../../docs/recording-creation-guide.md)
-for the full workflow.
+The library (`agentcow.postgres.adapters.django`) absorbs the remaining
+~870 lines of framework-generic adapter code that any Django project would
+otherwise have to write themselves.
 
-## Initial setup
+---
 
-1. Install the new dep:
+## Setup
 
-   ```bash
-   pip install -r requirements/base.txt
-   ```
+```bash
+# 1. Install deps
+pip install -r requirements/base.txt
 
-2. Deploy the COW PL/pgSQL helpers (one-time per DB):
+# 2. Deploy PL/pgSQL helpers (once per DB)
+python manage.py cow_deploy_functions
 
-   ```bash
-   python manage.py cow_deploy_functions
-   ```
+# 3. Enable COW on all Plane tables
+python manage.py cow_enable
 
-3. Enable COW on every plane app table:
+# 4. Verify
+python manage.py cow_status
 
-   ```bash
-   python manage.py cow_enable
-   ```
-
-4. Verify:
-
-   ```bash
-   python manage.py cow_status
-   ```
-
-5. Flip the feature flag for the app process:
-
-   ```bash
-   export ENABLE_COW=1
-   ```
+# 5. Activate the middleware
+export ENABLE_COW=1
+```
 
 ## Running migrations under COW
 
-Django's schema editor cannot operate on COW views. Use the bundled
-wrapper so migrations target the underlying `*_base` tables:
-
 ```bash
-python manage.py cow_migrate                   # equivalent of `migrate`
-python manage.py cow_migrate -- app_label 0003 # forwards args to migrate
-python manage.py cow_migrate --skip-enable     # leave COW off afterwards
+python manage.py cow_migrate
+python manage.py cow_migrate -- app_label 0003  # forwards args to migrate
+python manage.py cow_migrate --skip-enable      # leave COW off afterwards
 ```
 
-The wrapper runs `cow_disable` → `migrate` → `cow_enable`. Because
-`cow_enable` is idempotent, it is safe to re-run after the migration.
+## Header contract
 
-For deeper migration safety (DDL rewriting per statement) see the
-monotrail RFC at
-`monotrail/documentation/plans_rfcs/cow_migration_rewriter.md`.
+| Header                 | Purpose                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| `x-agent-session-id`   | UUID identifying the COW session — required to activate COW          |
+| `x-operation-id`       | UUID for the current operation (auto-generated if omitted)           |
+| `x-visible-operations` | Comma-separated UUIDs — reads only see changes from these operations |
 
-## Excluded tables
-
-`plane.cow.cow_lib.cow_target_models` walks the Django app registry and
-returns every concrete, managed model whose app is not in:
-
-- `auth`, `contenttypes`, `sessions`, `admin`
-- `django_celery_beat`, `django_celery_results`
-
-and whose `db_table` is not one of the COW bookkeeping tables
-(`cow_operation_log`, `cow_recording_session`). Extend either set via
-`--exclude-app` / `--exclude-table` on the management commands.
-
-## How it works (per-request)
-
-1. `CowSessionMiddleware.__call__` parses the three COW headers into a
-   `CowPostgresConfig`.
-2. It binds the config to the `trail_cow_ctx` ContextVar so any server
-   code (background helpers, serializers, etc.) can see it.
-3. It opens `transaction.atomic(using="default")` and registers a
-   `connection.execute_wrapper` that emits `SET LOCAL app.session_id =
-...` (and the related vars) at the start of every new transaction.
-   Django reuses connections across requests, so per-transaction
-   re-emit is necessary — same reason monotrail re-issues them in an
-   SQLAlchemy `after_begin` listener.
-4. The view runs; all writes land in `*_changes` and reads go through
-   the COW view that merges base + changes.
-5. If the view raises, `transaction.atomic` rolls back — the pending
-   change rows disappear with it.
-
-## Related code
-
-- Library: [`agent-cow` on PyPI](https://pypi.org/project/agent-cow/) (`agentcow.postgres.core`)
-- monotrail reference integration: [`monotrail/terra/terra/cow/`](../../../../monotrail/terra/terra/cow/)
+When `x-agent-session-id` is absent the middleware is a no-op.

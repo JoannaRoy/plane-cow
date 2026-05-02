@@ -5,7 +5,7 @@
 """Control-plane models for COW recordings and agent sessions.
 
 Both tables are excluded from COW enablement (see
-``plane.cow.adapter.cow_lib.COW_EXCLUDED_TABLES``) so their rows are never
+``agentcow.postgres.adapters.django.cow_lib.COW_EXCLUDED_TABLES``) so their rows are never
 shadowed — they describe recordings/runs that live *alongside* the COW
 machinery, not data that should itself be staged.
 

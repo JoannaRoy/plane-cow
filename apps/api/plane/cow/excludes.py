@@ -6,7 +6,7 @@
 
 Anything listed here is skipped by ``cow_enable`` / ``cow_disable`` /
 ``cow_migrate`` in addition to the generic defaults defined in
-``plane.cow.adapter.cow_lib``. Keep plane-specific knowledge here
+``agentcow.postgres.adapters.django.cow_lib``. Keep plane-specific knowledge here
 rather than polluting the generic adapter module.
 """
 

@@ -28,7 +28,7 @@ from agentcow.scoring import (
 )
 from agentcow.scoring.types import CHANGE_TABLE_RESERVED_FIELDS
 
-from ..adapter.executor import DjangoAsyncExecutor
+from agentcow.postgres.adapters.django.executor import DjangoAsyncExecutor
 
 
 PLANE_EXCLUDED_TABLES: set[str] = {

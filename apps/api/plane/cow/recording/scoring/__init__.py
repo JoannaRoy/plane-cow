@@ -10,7 +10,7 @@ and adds Plane-specific defaults via :mod:`.plane_config`.
 Example::
 
     from asgiref.sync import async_to_sync
-    from plane.cow.scoring import score_plane_sessions
+    from plane.cow.recording.scoring import score_plane_sessions
 
     result = async_to_sync(score_plane_sessions)(
         ground_truth_session_id=recording.session_id,

@@ -2,77 +2,22 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
-"""Copy-On-Write (COW) support for plane.
-
-This package integrates the ``agent-cow`` library into the plane Django app.
-See ``plane/cow/README.md`` for the full walkthrough. The architecture
-mirrors monotrail's ``terra.cow`` module.
+"""Copy-On-Write (COW) integration for Plane.
 
 Layout
 ------
 
-* ``plane.cow.adapter``: framework-generic Django + Postgres glue. Candidate
-  for upstream extraction into an ``agentcow.django`` package.
-* ``plane.cow`` (this module): plane-specific configuration — DRF views,
-  URL wiring, AppConfig, and the concrete ``CowSessionMiddleware`` subclass
-  that reads ``settings.ENABLE_COW`` and skips the ``/api/cow/`` endpoints.
+(a) core/        Runtime COW machinery — middleware, commit/discard endpoints,
+                 session-operations query. ~230 lines. This is what any Django
+                 project would need to replicate to adopt COW.
 
-Public names are re-exported from ``plane.cow.adapter`` so existing import
-sites keep working.
+(b) recording/   GT and agent session tracking — models, CRUD endpoints, and
+                 eval scoring helpers. ~400 lines. Could live in the harness
+                 instead; included here for convenience.
+
+(c) management/  Operational commands — deploy, enable, disable, migrate.
+     commands/   ~160 lines. Deployment-specific; depends on your infra.
+
+The framework-generic adapter layer (executor, middleware base, ORM helpers)
+has been extracted to ``agentcow.postgres.adapters.django`` in the agent-cow library.
 """
-
-from plane.cow.adapter import (
-    COW_EXCLUDED_APPS,
-    COW_EXCLUDED_TABLES,
-    COW_OPERATION_HEADER,
-    COW_SESSION_HEADER,
-    COW_VISIBLE_OPERATIONS_HEADER,
-    GRAPH_FORMAT_VERSION,
-    DjangoAsyncExecutor,
-    apply_cow_variables_sync,
-    commit_cow_operations,
-    commit_cow_session,
-    cow_target_models,
-    deploy_cow_functions,
-    disable_cow_for_all_models,
-    disable_cow_for_model,
-    discard_cow_operations,
-    enable_cow_for_all_models,
-    enable_cow_for_model,
-    get_cow_status,
-    get_dirty_tables,
-    get_session_graph,
-    get_session_operations,
-    parse_cow_headers_from_request,
-    serialize_cow_graph,
-    trail_cow_context,
-    trail_cow_ctx,
-)
-
-__all__ = [
-    "COW_EXCLUDED_APPS",
-    "COW_EXCLUDED_TABLES",
-    "COW_OPERATION_HEADER",
-    "COW_SESSION_HEADER",
-    "COW_VISIBLE_OPERATIONS_HEADER",
-    "DjangoAsyncExecutor",
-    "GRAPH_FORMAT_VERSION",
-    "apply_cow_variables_sync",
-    "commit_cow_operations",
-    "commit_cow_session",
-    "cow_target_models",
-    "deploy_cow_functions",
-    "disable_cow_for_all_models",
-    "disable_cow_for_model",
-    "discard_cow_operations",
-    "enable_cow_for_all_models",
-    "enable_cow_for_model",
-    "get_cow_status",
-    "get_dirty_tables",
-    "get_session_graph",
-    "get_session_operations",
-    "parse_cow_headers_from_request",
-    "serialize_cow_graph",
-    "trail_cow_context",
-    "trail_cow_ctx",
-]

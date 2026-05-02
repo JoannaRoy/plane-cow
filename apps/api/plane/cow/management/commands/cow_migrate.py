@@ -12,7 +12,7 @@ after ``--`` are forwarded to ``migrate``.
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
-from plane.cow.adapter import cow_lib
+from agentcow.postgres.adapters.django import cow_lib
 from plane.cow.excludes import PLANE_EXCLUDED_APPS, PLANE_EXCLUDED_TABLES
 
 

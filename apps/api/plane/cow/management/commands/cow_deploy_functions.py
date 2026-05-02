@@ -4,7 +4,7 @@
 
 from django.core.management.base import BaseCommand
 
-from plane.cow.adapter import cow_lib
+from agentcow.postgres.adapters.django import cow_lib
 
 
 class Command(BaseCommand):
